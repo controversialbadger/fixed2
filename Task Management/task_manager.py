@@ -10,12 +10,14 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                             QTimeEdit, QLineEdit, QComboBox, QMessageBox,
                             QFileDialog, QMenu, QAction, QHeaderView, QDialog,
                             QFormLayout, QDialogButtonBox, QCalendarWidget, QFrame)
+from recurrence_system import RecurrencePattern, RecurrenceDialog, RecurrenceSystem
 from PyQt5.QtCore import Qt, QTimer, QDateTime, QSortFilterProxyModel, QDate
 from PyQt5.QtGui import QIcon, QColor, QBrush, QFont
 
 from task_model import TaskTableModel
 from reminder_system import ReminderSystem
 from calendar_integration import CalendarDialog
+from file_manager import FileManager, AttachmentDialog
 
 class TaskManagerApp(QMainWindow):
     """Main window for the Task Manager application"""
@@ -58,6 +60,7 @@ class TaskManagerApp(QMainWindow):
         # Initialize the task model and reminder system
         self.task_model = TaskTableModel()
         self.reminder_system = ReminderSystem(self)
+        self.recurrence_system = RecurrenceSystem(self.task_model)
         
         # Setup the UI
         self.setup_ui()
@@ -74,6 +77,9 @@ class TaskManagerApp(QMainWindow):
                 os.makedirs(self.data_dir)
             except OSError as e:
                 QMessageBox.warning(self, "Warning", f"Could not create data directory: {str(e)}")
+        
+        # Initialize file manager
+        self.file_manager = FileManager(self.data_dir)
         
         # Set task file path
         self.task_file = os.path.join(self.data_dir, "tasks.json")
@@ -377,7 +383,7 @@ class TaskManagerApp(QMainWindow):
     
     def add_task(self):
         """Add a new task"""
-        dialog = TaskDialog(self)
+        dialog = TaskDialog(self, file_manager=self.file_manager)
         if dialog.exec_() == QDialog.Accepted:
             task_data = dialog.get_task_data()
             self.task_model.add_task(task_data)
@@ -396,11 +402,15 @@ class TaskManagerApp(QMainWindow):
         row = source_index.row()
         
         task_data = self.task_model.get_task(row)
-        dialog = TaskDialog(self, task_data)
+        dialog = TaskDialog(self, task_data, self.file_manager)
         
         if dialog.exec_() == QDialog.Accepted:
             updated_task = dialog.get_task_data()
-            self.task_model.update_task(row, updated_task)
+            # Update the task and get unused attachments
+            unused_attachments = self.task_model.update_task(row, updated_task)
+            # Clean up unused attachments
+            if unused_attachments:
+                self.file_manager.clean_unused_attachments(unused_attachments)
             self.save_tasks()
     
     def delete_task(self):
@@ -422,7 +432,11 @@ class TaskManagerApp(QMainWindow):
             proxy_index = indexes[0]
             source_index = self.proxy_model.mapToSource(proxy_index)
             row = source_index.row()
-            self.task_model.remove_task(row)
+            # Remove the task and get attachments for cleanup
+            attachments = self.task_model.remove_task(row)
+            # Clean up attachments
+            if attachments:
+                self.file_manager.clean_unused_attachments(attachments)
             self.save_tasks()
     
     def show_context_menu(self, position):
@@ -450,7 +464,14 @@ class TaskManagerApp(QMainWindow):
             proxy_index = indexes[0]
             source_index = self.proxy_model.mapToSource(proxy_index)
             row = source_index.row()
+            task_data = self.task_model.get_task(row)
             self.task_model.mark_completed(row)
+            
+            # Handle recurring task
+            if task_data and task_data.get('recurrence'):
+                if self.recurrence_system.handle_completed_task(task_data):
+                    self.statusBar().showMessage("Created next recurring task", 3000)
+            
             self.save_tasks()
     
     def apply_filter(self, filter_text):
@@ -545,12 +566,13 @@ class TaskManagerApp(QMainWindow):
 class TaskDialog(QDialog):
     """Dialog for adding or editing tasks"""
     
-    def __init__(self, parent=None, task_data=None):
+    def __init__(self, parent=None, task_data=None, file_manager=None):
         super().__init__(parent)
         self.setWindowTitle("Edit Task" if task_data else "New Task")
         self.resize(500, 400)
         
         self.task_data = task_data or {}
+        self.file_manager = file_manager
         
         self.setup_ui()
         
@@ -617,6 +639,32 @@ class TaskDialog(QDialog):
         self.reminder_combo.setToolTip("Set when you want to be reminded about this task")
         form_layout.addRow("Reminder:", self.reminder_combo)
         
+        # Attachments
+        self.attachments_label = QLabel("0 file(s) attached")
+        self.attachments_button = QPushButton("Manage Attachments")
+        self.attachments_button.setToolTip("Add, remove, or view file attachments")
+        self.attachments_button.clicked.connect(self.manage_attachments)
+
+        attachments_layout = QHBoxLayout()
+        attachments_layout.addWidget(self.attachments_label)
+        attachments_layout.addWidget(self.attachments_button)
+        attachments_layout.addStretch()
+
+        form_layout.addRow("Attachments:", attachments_layout)
+        
+        # Recurrence
+        self.recurrence_label = QLabel("No recurrence")
+        self.recurrence_button = QPushButton("Set Recurrence")
+        self.recurrence_button.setToolTip("Set up recurring task")
+        self.recurrence_button.clicked.connect(self.set_recurrence)
+
+        recurrence_layout = QHBoxLayout()
+        recurrence_layout.addWidget(self.recurrence_label)
+        recurrence_layout.addWidget(self.recurrence_button)
+        recurrence_layout.addStretch()
+
+        form_layout.addRow("Recurrence:", recurrence_layout)
+        
         main_layout.addLayout(form_layout)
         
         # Add a spacer
@@ -664,6 +712,15 @@ class TaskDialog(QDialog):
         index = self.reminder_combo.findText(reminder_offset)
         if index >= 0:
             self.reminder_combo.setCurrentIndex(index)
+            
+        # Update attachments label
+        self.update_attachments_label()
+        
+        # Update recurrence label
+        recurrence_data = self.task_data.get('recurrence')
+        if recurrence_data:
+            recurrence = RecurrencePattern.from_dict(recurrence_data)
+            self.recurrence_label.setText(recurrence.get_description())
     
     def get_task_data(self):
         """Get the task data from the form"""
@@ -698,7 +755,53 @@ class TaskDialog(QDialog):
             'deadline': deadline,
             'reminder_offset': reminder_offset,
             'reminder_time': reminder_time,
-            'completed': self.status_combo.currentText() == "Completed"
+            'completed': self.status_combo.currentText() == "Completed",
+            'attachments': self.task_data.get('attachments', [])
         }
         
         return task_data
+        
+    def manage_attachments(self):
+        """Open the attachment dialog to manage attachments"""
+        if not self.file_manager:
+            QMessageBox.warning(self, "Error", "File manager not initialized.")
+            return
+        
+        # Get current attachments
+        attachments = self.task_data.get('attachments', [])
+        
+        # Open the attachment dialog
+        dialog = AttachmentDialog(self, attachments, self.file_manager)
+        if dialog.exec_() == QDialog.Accepted:
+            # Update attachments
+            self.task_data['attachments'] = dialog.get_attachments()
+            # Update the label
+            self.update_attachments_label()
+            
+    def update_attachments_label(self):
+        """Update the attachments label with the current count"""
+        attachments = self.task_data.get('attachments', [])
+        count = len(attachments)
+        self.attachments_label.setText(f"{count} file(s) attached")
+        
+    def set_recurrence(self):
+        """Open the recurrence dialog to set up recurring tasks"""
+        # Get current recurrence data if it exists
+        recurrence_data = self.task_data.get('recurrence')
+        recurrence = None
+        if recurrence_data:
+            recurrence = RecurrencePattern.from_dict(recurrence_data)
+            
+        # Open the recurrence dialog
+        dialog = RecurrenceDialog(self, recurrence)
+        if dialog.exec_() == QDialog.Accepted:
+            # Update recurrence
+            new_recurrence = dialog.get_recurrence()
+            if new_recurrence:
+                self.task_data['recurrence'] = new_recurrence.to_dict()
+                self.recurrence_label.setText(new_recurrence.get_description())
+            else:
+                # Recurrence was removed
+                if 'recurrence' in self.task_data:
+                    del self.task_data['recurrence']
+                self.recurrence_label.setText("No recurrence")

@@ -156,6 +156,7 @@ class TaskTableModel(QAbstractTableModel):
                     task.get('priority', 'Medium'),
                     task.get('status', 'Not Started'),
                     task.get('deadline').strftime('%Y-%m-%d %H:%M') if task.get('deadline') else '',
-                    task.get('reminder_offset', 'No Reminder')
+                    task.get('reminder_offset', 'No Reminder'),
+                    f"{len(task.get('attachments', []))} file(s)" if task.get('attachments', []) else "No files"
                 ]
                 writer.writerow(row)
