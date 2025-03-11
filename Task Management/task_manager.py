@@ -37,19 +37,88 @@ class TaskManagerApp(QMainWindow):
         self.reminder_timer.timeout.connect(self.check_reminders)
         self.reminder_timer.start(60000)  # Check every minute
         
+        # Create data directory in user's home directory
+        self.data_dir = os.path.join(os.path.expanduser("~"), ".task_manager")
+        if not os.path.exists(self.data_dir):
+            try:
+                os.makedirs(self.data_dir)
+            except OSError as e:
+                QMessageBox.warning(self, "Warning", f"Could not create data directory: {str(e)}")
+        
+        # Set task file path
+        self.task_file = os.path.join(self.data_dir, "tasks.json")
+        
         # Load tasks if file exists
-        self.task_file = "tasks.json"
         if os.path.exists(self.task_file):
             self.load_tasks()
     
     def setup_ui(self):
         """Setup the user interface"""
+        # Set application style
+        self.setStyleSheet("""
+            QMainWindow {
+                background-color: #f5f5f5;
+            }
+            QTableView {
+                border: 1px solid #d0d0d0;
+                border-radius: 4px;
+                background-color: white;
+                selection-background-color: #e0e0ff;
+            }
+            QPushButton {
+                background-color: #4a86e8;
+                color: white;
+                border: none;
+                padding: 6px 12px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #3a76d8;
+            }
+            QPushButton:pressed {
+                background-color: #2a66c8;
+            }
+            QLineEdit {
+                padding: 4px;
+                border: 1px solid #d0d0d0;
+                border-radius: 4px;
+            }
+            QComboBox {
+                padding: 4px;
+                border: 1px solid #d0d0d0;
+                border-radius: 4px;
+            }
+        """)
+        
         # Central widget
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         
         # Main layout
         main_layout = QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setSpacing(10)
+        
+        # Header section with title and search
+        header_layout = QHBoxLayout()
+        
+        # Title label
+        title_label = QLabel("Task Manager")
+        title_label.setStyleSheet("font-size: 18px; font-weight: bold; color: #333;")
+        header_layout.addWidget(title_label)
+        
+        # Spacer
+        header_layout.addStretch()
+        
+        # Search box
+        self.search_box = QLineEdit()
+        self.search_box.setPlaceholderText("Search tasks...")
+        self.search_box.setToolTip("Search for tasks by title or description")
+        self.search_box.textChanged.connect(self.search_tasks)
+        self.search_box.setMinimumWidth(200)
+        header_layout.addWidget(self.search_box)
+        
+        main_layout.addLayout(header_layout)
         
         # Task table
         self.proxy_model = QSortFilterProxyModel()
@@ -63,47 +132,83 @@ class TaskManagerApp(QMainWindow):
         self.task_table.setAlternatingRowColors(True)
         self.task_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.task_table.customContextMenuRequested.connect(self.show_context_menu)
+        self.task_table.setToolTip("Double-click a task to edit it")
+        self.task_table.doubleClicked.connect(self.edit_task)
         
-        main_layout.addWidget(self.task_table)
+        # Set row height
+        self.task_table.verticalHeader().setDefaultSectionSize(30)
+        
+        # Set header style
+        self.task_table.horizontalHeader().setStyleSheet("""
+            QHeaderView::section {
+                background-color: #e0e0e0;
+                padding: 6px;
+                border: none;
+                border-right: 1px solid #d0d0d0;
+                font-weight: bold;
+            }
+        """)
+        
+        main_layout.addWidget(self.task_table, 1)  # Give table a stretch factor of 1
         
         # Control panel
         control_panel = QWidget()
+        control_panel.setStyleSheet("background-color: #e8e8e8; border-radius: 4px; padding: 8px;")
         control_layout = QHBoxLayout(control_panel)
+        control_layout.setContentsMargins(10, 10, 10, 10)
+        control_layout.setSpacing(10)
         
         # Add task button
         add_button = QPushButton("Add Task")
+        add_button.setIcon(self.style().standardIcon(self.style().SP_FileDialogNewFolder))
+        add_button.setToolTip("Create a new task")
         add_button.clicked.connect(self.add_task)
         control_layout.addWidget(add_button)
         
         # Edit task button
         edit_button = QPushButton("Edit Task")
+        edit_button.setIcon(self.style().standardIcon(self.style().SP_FileDialogDetailedView))
+        edit_button.setToolTip("Edit the selected task")
         edit_button.clicked.connect(self.edit_task)
         control_layout.addWidget(edit_button)
         
         # Delete task button
         delete_button = QPushButton("Delete Task")
+        delete_button.setIcon(self.style().standardIcon(self.style().SP_TrashIcon))
+        delete_button.setToolTip("Delete the selected task")
         delete_button.clicked.connect(self.delete_task)
         control_layout.addWidget(delete_button)
         
+        # Separator
+        separator = QFrame()
+        separator.setFrameShape(QFrame.VLine)
+        separator.setFrameShadow(QFrame.Sunken)
+        control_layout.addWidget(separator)
+        
         # Filter controls
+        filter_label = QLabel("Filter:")
+        control_layout.addWidget(filter_label)
+        
         self.filter_combo = QComboBox()
         self.filter_combo.addItems(["All", "Active", "Completed", "Overdue"])
+        self.filter_combo.setToolTip("Filter tasks by status")
         self.filter_combo.currentTextChanged.connect(self.apply_filter)
-        control_layout.addWidget(QLabel("Filter:"))
         control_layout.addWidget(self.filter_combo)
         
-        # Search box
-        self.search_box = QLineEdit()
-        self.search_box.setPlaceholderText("Search tasks...")
-        self.search_box.textChanged.connect(self.search_tasks)
-        control_layout.addWidget(self.search_box)
+        # Spacer
+        control_layout.addStretch()
         
         # Calendar button
-        calendar_button = QPushButton("Calendar")
+        calendar_button = QPushButton("Calendar View")
+        calendar_button.setIcon(self.style().standardIcon(self.style().SP_DialogApplyButton))
+        calendar_button.setToolTip("View tasks in a calendar")
         calendar_button.clicked.connect(self.show_calendar)
         control_layout.addWidget(calendar_button)
         
         main_layout.addWidget(control_panel)
+        
+        # Status bar
+        self.statusBar().showMessage("Ready")
         
         # Setup menu bar
         self.setup_menu()
@@ -284,6 +389,9 @@ class TaskManagerApp(QMainWindow):
             with open(self.task_file, 'w') as f:
                 json.dump(self.task_model.tasks, f, default=self._serialize_datetime)
             self.statusBar().showMessage("Tasks saved successfully", 3000)
+        except PermissionError:
+            QMessageBox.critical(self, "Permission Error", 
+                                f"Cannot write to {self.task_file}. Please check file permissions.")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save tasks: {str(e)}")
     
@@ -341,8 +449,8 @@ class TaskDialog(QDialog):
     
     def __init__(self, parent=None, task_data=None):
         super().__init__(parent)
-        self.setWindowTitle("Task" if task_data else "New Task")
-        self.resize(400, 300)
+        self.setWindowTitle("Edit Task" if task_data else "New Task")
+        self.resize(500, 400)
         
         self.task_data = task_data or {}
         
@@ -354,48 +462,81 @@ class TaskDialog(QDialog):
     
     def setup_ui(self):
         """Setup the dialog UI"""
-        layout = QFormLayout(self)
+        main_layout = QVBoxLayout(self)
+        
+        # Create a form layout for the inputs
+        form_layout = QFormLayout()
+        form_layout.setSpacing(10)
+        form_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
         
         # Task title
         self.title_edit = QLineEdit()
-        layout.addRow("Title:", self.title_edit)
+        self.title_edit.setPlaceholderText("Enter task title")
+        self.title_edit.setToolTip("Enter a clear and concise title for your task")
+        form_layout.addRow("Title:", self.title_edit)
         
         # Task description
         self.description_edit = QLineEdit()
-        layout.addRow("Description:", self.description_edit)
+        self.description_edit.setPlaceholderText("Enter task description")
+        self.description_edit.setToolTip("Provide details about what needs to be done")
+        form_layout.addRow("Description:", self.description_edit)
         
         # Priority
         self.priority_combo = QComboBox()
         self.priority_combo.addItems(["Low", "Medium", "High"])
-        layout.addRow("Priority:", self.priority_combo)
+        self.priority_combo.setToolTip("Set the importance level of this task")
+        
+        # Add color indicators to priority dropdown
+        self.priority_combo.setItemData(0, QBrush(QColor(200, 255, 200)), Qt.BackgroundRole)  # Low - Light green
+        self.priority_combo.setItemData(1, QBrush(QColor(255, 255, 200)), Qt.BackgroundRole)  # Medium - Light yellow
+        self.priority_combo.setItemData(2, QBrush(QColor(255, 200, 200)), Qt.BackgroundRole)  # High - Light red
+        
+        form_layout.addRow("Priority:", self.priority_combo)
         
         # Status
         self.status_combo = QComboBox()
         self.status_combo.addItems(["Not Started", "In Progress", "Completed"])
-        layout.addRow("Status:", self.status_combo)
+        self.status_combo.setToolTip("Current status of the task")
+        form_layout.addRow("Status:", self.status_combo)
         
         # Deadline date
         self.deadline_date = QDateEdit()
         self.deadline_date.setCalendarPopup(True)
         self.deadline_date.setDate(QDate.currentDate())
-        layout.addRow("Deadline Date:", self.deadline_date)
+        self.deadline_date.setToolTip("Set the due date for this task")
+        form_layout.addRow("Deadline Date:", self.deadline_date)
         
         # Deadline time
         self.deadline_time = QTimeEdit()
         self.deadline_time.setTime(QDateTime.currentDateTime().time())
-        layout.addRow("Deadline Time:", self.deadline_time)
+        self.deadline_time.setToolTip("Set the due time for this task")
+        form_layout.addRow("Deadline Time:", self.deadline_time)
         
         # Reminder checkbox
-        self.reminder_checkbox = QComboBox()
-        self.reminder_checkbox.addItems(["No Reminder", "5 minutes before", "15 minutes before", 
-                                         "30 minutes before", "1 hour before", "1 day before"])
-        layout.addRow("Reminder:", self.reminder_checkbox)
+        self.reminder_combo = QComboBox()
+        self.reminder_combo.addItems(["No Reminder", "5 minutes before", "15 minutes before", 
+                                     "30 minutes before", "1 hour before", "1 day before"])
+        self.reminder_combo.setToolTip("Set when you want to be reminded about this task")
+        form_layout.addRow("Reminder:", self.reminder_combo)
+        
+        main_layout.addLayout(form_layout)
+        
+        # Add a spacer
+        main_layout.addSpacing(20)
         
         # Buttons
         button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         button_box.accepted.connect(self.accept)
         button_box.rejected.connect(self.reject)
-        layout.addRow(button_box)
+        
+        # Style the buttons
+        ok_button = button_box.button(QDialogButtonBox.Ok)
+        ok_button.setToolTip("Save the task")
+        
+        cancel_button = button_box.button(QDialogButtonBox.Cancel)
+        cancel_button.setToolTip("Discard changes and close")
+        
+        main_layout.addWidget(button_box)
     
     def fill_form(self):
         """Fill the form with existing task data"""
@@ -422,9 +563,9 @@ class TaskDialog(QDialog):
         
         # Set reminder
         reminder_offset = self.task_data.get('reminder_offset', 'No Reminder')
-        index = self.reminder_checkbox.findText(reminder_offset)
+        index = self.reminder_combo.findText(reminder_offset)
         if index >= 0:
-            self.reminder_checkbox.setCurrentIndex(index)
+            self.reminder_combo.setCurrentIndex(index)
     
     def get_task_data(self):
         """Get the task data from the form"""
@@ -435,7 +576,7 @@ class TaskDialog(QDialog):
                            time.hour(), time.minute(), time.second())
         
         # Calculate reminder time based on offset
-        reminder_offset = self.reminder_checkbox.currentText()
+        reminder_offset = self.reminder_combo.currentText()
         reminder_time = None
         
         if reminder_offset != "No Reminder":
