@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                             QTableView, QPushButton, QLabel, QDateEdit, 
                             QTimeEdit, QLineEdit, QComboBox, QMessageBox,
                             QFileDialog, QMenu, QAction, QHeaderView, QDialog,
-                            QFormLayout, QDialogButtonBox, QCalendarWidget)
+                            QFormLayout, QDialogButtonBox, QCalendarWidget, QFrame)
 from PyQt5.QtCore import Qt, QTimer, QDateTime, QSortFilterProxyModel, QDate
 from PyQt5.QtGui import QIcon, QColor, QBrush, QFont
 
@@ -24,6 +24,36 @@ class TaskManagerApp(QMainWindow):
         super().__init__()
         self.setWindowTitle("Task Manager")
         self.resize(1000, 600)
+        
+        # Set application style
+        self.setStyleSheet("""
+            QMainWindow {
+                background-color: #fafafa;
+            }
+            QMenuBar {
+                background-color: #f0f0f0;
+                border-bottom: 1px solid #ddd;
+            }
+            QMenuBar::item {
+                padding: 6px 10px;
+                color: #333;
+            }
+            QMenuBar::item:selected {
+                background-color: #e3f2fd;
+                color: #2196F3;
+            }
+            QStatusBar {
+                background-color: #f0f0f0;
+                color: #666;
+                border-top: 1px solid #ddd;
+            }
+            QToolTip {
+                border: 1px solid #ccc;
+                background-color: #f8f8f8;
+                color: #333;
+                padding: 5px;
+            }
+        """)
         
         # Initialize the task model and reminder system
         self.task_model = TaskTableModel()
@@ -54,42 +84,6 @@ class TaskManagerApp(QMainWindow):
     
     def setup_ui(self):
         """Setup the user interface"""
-        # Set application style
-        self.setStyleSheet("""
-            QMainWindow {
-                background-color: #f5f5f5;
-            }
-            QTableView {
-                border: 1px solid #d0d0d0;
-                border-radius: 4px;
-                background-color: white;
-                selection-background-color: #e0e0ff;
-            }
-            QPushButton {
-                background-color: #4a86e8;
-                color: white;
-                border: none;
-                padding: 6px 12px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #3a76d8;
-            }
-            QPushButton:pressed {
-                background-color: #2a66c8;
-            }
-            QLineEdit {
-                padding: 4px;
-                border: 1px solid #d0d0d0;
-                border-radius: 4px;
-            }
-            QComboBox {
-                padding: 4px;
-                border: 1px solid #d0d0d0;
-                border-radius: 4px;
-            }
-        """)
-        
         # Central widget
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -104,7 +98,7 @@ class TaskManagerApp(QMainWindow):
         
         # Title label
         title_label = QLabel("Task Manager")
-        title_label.setStyleSheet("font-size: 18px; font-weight: bold; color: #333;")
+        title_label.setStyleSheet("font-size: 24px; font-weight: bold; color: #333; margin: 10px 0;")
         header_layout.addWidget(title_label)
         
         # Spacer
@@ -115,7 +109,20 @@ class TaskManagerApp(QMainWindow):
         self.search_box.setPlaceholderText("Search tasks...")
         self.search_box.setToolTip("Search for tasks by title or description")
         self.search_box.textChanged.connect(self.search_tasks)
-        self.search_box.setMinimumWidth(200)
+        self.search_box.setMinimumWidth(250)
+        self.search_box.setMinimumHeight(36)
+        self.search_box.setStyleSheet("""
+            QLineEdit {
+                border: 1px solid #ccc;
+                border-radius: 18px;
+                padding: 5px 15px;
+                background-color: white;
+                font-size: 14px;
+            }
+            QLineEdit:focus {
+                border: 1px solid #2196F3;
+            }
+        """)
         header_layout.addWidget(self.search_box)
         
         main_layout.addLayout(header_layout)
@@ -136,16 +143,38 @@ class TaskManagerApp(QMainWindow):
         self.task_table.doubleClicked.connect(self.edit_task)
         
         # Set row height
-        self.task_table.verticalHeader().setDefaultSectionSize(30)
+        self.task_table.verticalHeader().setDefaultSectionSize(36)
+        self.task_table.verticalHeader().setVisible(False)  # Hide vertical header
         
         # Set header style
         self.task_table.horizontalHeader().setStyleSheet("""
             QHeaderView::section {
-                background-color: #e0e0e0;
-                padding: 6px;
+                background-color: #f0f0f0;
+                padding: 10px 6px;
                 border: none;
-                border-right: 1px solid #d0d0d0;
+                border-bottom: 2px solid #2196F3;
                 font-weight: bold;
+                font-size: 14px;
+                color: #333;
+            }
+        """)
+        
+        # Set table style
+        self.task_table.setStyleSheet("""
+            QTableView {
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                background-color: white;
+                gridline-color: #eee;
+                selection-background-color: #e3f2fd;
+                selection-color: #000;
+            }
+            QTableView::item {
+                padding: 6px;
+                border-bottom: 1px solid #eee;
+            }
+            QTableView::item:alternate {
+                background-color: #f9f9f9;
             }
         """)
         
@@ -153,15 +182,33 @@ class TaskManagerApp(QMainWindow):
         
         # Control panel
         control_panel = QWidget()
-        control_panel.setStyleSheet("background-color: #e8e8e8; border-radius: 4px; padding: 8px;")
+        control_panel.setStyleSheet("""
+            background-color: #f0f0f0; 
+            border-top: 1px solid #cccccc;
+            border-radius: 0px; 
+            padding: 10px;
+        """)
         control_layout = QHBoxLayout(control_panel)
-        control_layout.setContentsMargins(10, 10, 10, 10)
-        control_layout.setSpacing(10)
+        control_layout.setContentsMargins(15, 15, 15, 15)
+        control_layout.setSpacing(15)
         
         # Add task button
         add_button = QPushButton("Add Task")
         add_button.setIcon(self.style().standardIcon(self.style().SP_FileDialogNewFolder))
         add_button.setToolTip("Create a new task")
+        add_button.setMinimumHeight(40)
+        add_button.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                font-weight: bold;
+                border-radius: 4px;
+                padding: 8px 16px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+        """)
         add_button.clicked.connect(self.add_task)
         control_layout.addWidget(add_button)
         
@@ -169,6 +216,19 @@ class TaskManagerApp(QMainWindow):
         edit_button = QPushButton("Edit Task")
         edit_button.setIcon(self.style().standardIcon(self.style().SP_FileDialogDetailedView))
         edit_button.setToolTip("Edit the selected task")
+        edit_button.setMinimumHeight(40)
+        edit_button.setStyleSheet("""
+            QPushButton {
+                background-color: #2196F3;
+                color: white;
+                font-weight: bold;
+                border-radius: 4px;
+                padding: 8px 16px;
+            }
+            QPushButton:hover {
+                background-color: #0b7dda;
+            }
+        """)
         edit_button.clicked.connect(self.edit_task)
         control_layout.addWidget(edit_button)
         
@@ -176,6 +236,19 @@ class TaskManagerApp(QMainWindow):
         delete_button = QPushButton("Delete Task")
         delete_button.setIcon(self.style().standardIcon(self.style().SP_TrashIcon))
         delete_button.setToolTip("Delete the selected task")
+        delete_button.setMinimumHeight(40)
+        delete_button.setStyleSheet("""
+            QPushButton {
+                background-color: #f44336;
+                color: white;
+                font-weight: bold;
+                border-radius: 4px;
+                padding: 8px 16px;
+            }
+            QPushButton:hover {
+                background-color: #d32f2f;
+            }
+        """)
         delete_button.clicked.connect(self.delete_task)
         control_layout.addWidget(delete_button)
         
@@ -183,15 +256,27 @@ class TaskManagerApp(QMainWindow):
         separator = QFrame()
         separator.setFrameShape(QFrame.VLine)
         separator.setFrameShadow(QFrame.Sunken)
+        separator.setStyleSheet("background-color: #cccccc; margin: 5px 10px;")
         control_layout.addWidget(separator)
         
         # Filter controls
         filter_label = QLabel("Filter:")
+        filter_label.setStyleSheet("font-weight: bold; font-size: 14px;")
         control_layout.addWidget(filter_label)
         
         self.filter_combo = QComboBox()
         self.filter_combo.addItems(["All", "Active", "Completed", "Overdue"])
         self.filter_combo.setToolTip("Filter tasks by status")
+        self.filter_combo.setMinimumHeight(30)
+        self.filter_combo.setStyleSheet("""
+            QComboBox {
+                border: 1px solid #cccccc;
+                border-radius: 4px;
+                padding: 4px;
+                background-color: white;
+                min-width: 120px;
+            }
+        """)
         self.filter_combo.currentTextChanged.connect(self.apply_filter)
         control_layout.addWidget(self.filter_combo)
         
@@ -202,6 +287,19 @@ class TaskManagerApp(QMainWindow):
         calendar_button = QPushButton("Calendar View")
         calendar_button.setIcon(self.style().standardIcon(self.style().SP_DialogApplyButton))
         calendar_button.setToolTip("View tasks in a calendar")
+        calendar_button.setMinimumHeight(40)
+        calendar_button.setStyleSheet("""
+            QPushButton {
+                background-color: #9C27B0;
+                color: white;
+                font-weight: bold;
+                border-radius: 4px;
+                padding: 8px 16px;
+            }
+            QPushButton:hover {
+                background-color: #7B1FA2;
+            }
+        """)
         calendar_button.clicked.connect(self.show_calendar)
         control_layout.addWidget(calendar_button)
         
